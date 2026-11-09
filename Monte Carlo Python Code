@@ -1,0 +1,173 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import statistics
+from scipy.stats import norm
+
+r = 0.05
+mu = r
+N = 1000
+T = 1
+M = 10000
+S_0 = 100
+B_up = 130
+B_down = 90
+vol = 0.20
+K = 110
+
+
+UpAndInCallPayoff = np.zeros(M)
+UpAndInPutPayoff = np.zeros(M)
+DownAndInCallPayoff = np.zeros(M)
+DownAndInPutPayoff = np.zeros(M)
+
+
+dt = T / N
+S_t = np.exp((mu - ((vol**2)/2))*dt +vol * np.random.normal(0, np.sqrt(dt), size=(M,N)).T)
+
+S_t = np.vstack([np.ones(M), S_t])
+S_t = S_0 * S_t.cumprod(axis=0)
+
+
+t = np.linspace(0,T,N+1)
+tt = np.full(shape=(M,N+1), fill_value = t).T
+
+plt.plot(tt,S_t)
+plt.xlabel('Years $(t)$')
+plt.ylabel("Stock Price $(S_t)$")
+plt.title("Stock price returns")
+
+
+CallPayoff = np.maximum(S_t[-1,:] - K,0)
+Call_EV = np.mean(CallPayoff)
+CallPrice = np.exp(-r*T) * Call_EV
+print(f"MC Call Price: {CallPrice} ")
+
+PutPayoff = np.maximum(K-S_t[-1,:],0)
+Put_EV = np.mean(PutPayoff)
+PutPrice = np.exp(-r*T) * Put_EV
+
+print(f"MC Put Price: {PutPrice} ")
+
+DigitalCallPayoff = np.where(S_t[-1,:]>=K, 1, 0)
+DigitalCall_EV = np.mean(DigitalCallPayoff)
+DigitalCallPrice = np.exp(-r*T) * DigitalCall_EV
+
+print(f"MC Digital Call Price: {DigitalCallPrice} ")
+
+DigitalPutPayoff = np.where(S_t[-1,:]<K, 1, 0)
+DigitalPut_EV = np.mean(DigitalPutPayoff)
+DigitalPutPrice = np.exp(-r*T) * DigitalPut_EV
+
+print(f"MC Digital Put Price: {DigitalPutPrice} ")
+
+UpAndOutCallPayoff = CallPayoff.copy()
+UpAndOutPutPayoff = PutPayoff.copy()
+
+DownAndOutCallPayoff = CallPayoff.copy()
+DownAndOutPutPayoff = PutPayoff.copy()
+
+for s in range(M):
+      for t in range(N+1):
+            if S_t[t,s] >= B_up:
+                  UpAndInCallPayoff[s] = np.maximum(S_t[-1,s] - K, 0)
+                  UpAndInPutPayoff[s] = np.maximum(K-S_t[-1,s], 0)
+                  UpAndOutCallPayoff[s] = 0
+                  UpAndOutPutPayoff[s] = 0
+                  break
+            
+for s in range(M):
+      for t in range(N+1):
+            if S_t[t,s] <= B_down:
+                  DownAndInCallPayoff[s] = np.maximum(S_t[-1,s] - K, 0)
+                  DownAndInPutPayoff[s] = np.maximum(K-S_t[-1,s], 0)
+                  DownAndOutCallPayoff[s] = 0
+                  DownAndOutPutPayoff[s] = 0
+
+
+UpAndInCall_EV = np.mean(UpAndInCallPayoff)
+UpAndInCallPrice = np.exp(-r*T) * UpAndInCall_EV
+
+UpAndInPut_EV = np.mean(UpAndInPutPayoff)
+UpAndInPutPrice = np.exp(-r*T) * UpAndInPut_EV
+
+UpAndOutCall_EV = np.mean(UpAndOutCallPayoff)
+UpAndOutCallPrice = np.exp(-r*T) * UpAndOutCall_EV
+
+UpAndOutPut_EV = np.mean(UpAndOutPutPayoff)
+UpAndOutPutPrice = np.exp(-r*T) * UpAndOutPut_EV
+
+DownAndInCall_EV = np.mean(DownAndInCallPayoff)
+DownAndInCallPrice = np.exp(-r*T) * DownAndInCall_EV
+
+DownAndInPut_EV = np.mean(DownAndInPutPayoff)
+DownAndInPutPrice = np.exp(-r*T) * DownAndInPut_EV
+
+DownAndOutCall_EV = np.mean(DownAndOutCallPayoff)
+DownAndOutCallPrice = np.exp(-r*T) * DownAndOutCall_EV
+
+DownAndOutPut_EV = np.mean(DownAndOutPutPayoff)
+DownAndOutPutPrice = np.exp(-r*T) * DownAndOutPut_EV
+
+print(f"MC Up and In Call Price: {UpAndInCallPrice} ")
+print(f"MC Up and In Put Price: {UpAndInPutPrice} ")
+
+print(f"MC Up and Out Call Price: {UpAndOutCallPrice} ")
+print(f"MC Up and Out Put Price: {UpAndOutPutPrice} ")
+
+print(f"MC Down and In Call Price: {DownAndInCallPrice} ")
+print(f"MC Down and In Put Price: {DownAndInPutPrice} ")
+
+print(f"MC Down and Out Call Price: {DownAndOutCallPrice} ")
+print(f"MC Down and Out Put Price: {DownAndOutPutPrice} ")
+
+def BlackScholesPrices(S, K, r, vol, T, t):
+        d1 = (np.log(S/K) + (r+(0.5*(vol**2)))*(T-t)) / (vol*np.sqrt(T-t))
+        d2 = d1 - vol*np.sqrt(T-t)
+        CallPrice = (S*norm.cdf(d1)) - (K*np.exp(-r*(T-t))*norm.cdf(d2))
+        PutPrice = (K*np.exp(-r*(T-t))*norm.cdf(-d2)) - (S*norm.cdf(-d1))
+        DigitalCallPrices = np.exp(-r*(T-t)) * norm.cdf(d2)
+        DigitalPutPrices = np.exp(-r*(T-t)) * norm.cdf(-d2)
+        return CallPrice, PutPrice, DigitalCallPrices, DigitalPutPrices
+
+BS_Call, BS_Put, BS_DigiCall, BS_DigiPut = BlackScholesPrices(S_0,K,r,vol,T,0)
+
+print(f"Black Scholes Call Price: {BS_Call} ")
+print(f"Black Scholes Put Price: {BS_Put} ")
+print(f"Black Scholes Digital Call Price: {BS_DigiCall} ")
+print(f"Black Scholes Digital Put Price: {BS_DigiPut} ")
+
+MC_Prices = [CallPrice, PutPrice, DigitalCallPrice, DigitalPutPrice]
+BS_Prices = [BS_Call, BS_Put, BS_DigiCall, BS_DigiPut]
+
+Payoffs = [CallPayoff, PutPayoff, DigitalCallPayoff, DigitalPutPayoff]
+OptionNames = ["Call", "Put", "Digital Call", "Digital Put"]
+
+print("\n===== MONTE CARLO ERROR ANALYSIS =====")
+
+for name, mc, bs, payoff in zip(
+    OptionNames, MC_Prices, BS_Prices, Payoffs
+):
+    SE = np.exp(-r*T) * np.std(payoff, ddof=1) / np.sqrt(M)
+    CI_Lower = mc - 1.96 * SE
+    CI_Upper = mc + 1.96 * SE
+
+    print(f"\n{name}")
+    print(f"Monte Carlo Price:  ${mc:.6f}")
+    print(f"Black-Scholes Price: ${bs:.6f}")
+    print(f"Absolute Error:      ${abs(mc-bs):.6f}")
+    print(f"Standard Error:      ${SE:.6f}")
+    print(f"95% CI:              [${CI_Lower:.6f}, ${CI_Upper:.6f}]")
+
+
+print("\n===== PUT-CALL PARITY =====")
+
+print(f"Vanilla Put-Call Parity: {CallPrice + K*np.exp(-r*T):.6f} = {PutPrice + S_0:.6f}")
+
+print("\n===== BARRIER IN-OUT PARITY =====")
+
+print(f"Up Call:   {UpAndInCallPrice + UpAndOutCallPrice:.6f} = {CallPrice:.6f}")
+print(f"Up Put:    {UpAndInPutPrice + UpAndOutPutPrice:.6f} = {PutPrice:.6f}")
+
+print(f"Down Call: {DownAndInCallPrice + DownAndOutCallPrice:.6f} = {CallPrice:.6f}")
+print(f"Down Put:  {DownAndInPutPrice + DownAndOutPutPrice:.6f} = {PutPrice:.6f}")
+
