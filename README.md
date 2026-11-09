@@ -56,7 +56,7 @@ S_{t+\Delta t}=S_t\exp\left[
 $$
 
 This expected value can be found by the Strong Law of Large Numbers by simulating N geometric Brownian motion paths of the stock, taking the final stock price and calculating the derivative payoff, then averaging the sample of payoffs.
-As \(N\to\infty\), this sample mean converges to the true expected value of the payoff distribution.
+As $\(N\to\infty\)$, this sample mean converges to the true expected value of the payoff distribution.
 
 The model simulates 10,000 independent stock price paths over a one year maturity, calculates vanilla, digital, and path dependent barrier option payoffs, and discounts their sample average to obtain the present value:
 
