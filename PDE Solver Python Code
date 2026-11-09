@@ -1,0 +1,416 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+
+OptionType = "Call"
+K = 110
+T = 1
+S_max = K * 3  
+S_nodes = 100
+T_nodes = 100
+r = 0.05
+vol = 0.20
+S = np.linspace(0,S_max, S_nodes)
+t = np.linspace(0,T, T_nodes)
+ds = S[1] - S[0]
+dt_max = 1/((vol**2)*((S_nodes-2)**2)+r)
+T_nodes = int(np.ceil(T / (0.9 * dt_max))) + 1
+i_min = 1
+i_max = S_nodes - 1
+
+B_up = 200
+B_down = 80
+
+t = np.linspace(0, T, T_nodes)
+dt = t[1] - t[0]
+
+V = np.zeros((t.size, S.size))
+
+if OptionType == "Put":
+    V[-1,:] = np.maximum(K-S, 0) #Put option boundary conditions
+    V[:,0] = K*np.exp(-r*(T-t))
+    V[:,-1] = 0
+elif OptionType =="Call":
+    V[-1,:] = np.maximum(S - K, 0)
+    V[:,0] = 0
+    V[:, -1] = S_max - K*np.exp(-r*(T - t))
+
+elif OptionType == "Digital Call":
+    V[-1,:] = np.where(S>=K, 1, 0)
+    V[:,0] = 0
+    V[:,-1] = np.exp(-r*(T-t))
+
+elif OptionType == "Digital Put":
+    V[-1,:] = np.where(S<K, 1, 0)
+    V[:,0] = np.exp(-r*(T-t))
+    V[:,-1] = 0
+    
+
+elif OptionType == "Up and Out Call Option":
+    B_up_idx = np.argmin(np.abs(S - B_up))
+    V[:, B_up_idx:] = 0
+    V[:, 0] = 0
+    V[-1, :B_up_idx] = np.maximum(S[:B_up_idx] - K, 0)
+    i_min = 1
+    i_max = B_up_idx
+
+elif OptionType == "Up and Out Put Option":
+    B_up_idx = np.argmin(np.abs(S - B_up))
+    V[:, B_up_idx:] = 0
+    V[:, 0] = K*np.exp(-r*(T-t))
+    V[-1, :B_up_idx] = np.maximum(K - S[:B_up_idx], 0)
+    i_min = 1
+    i_max = B_up_idx
+
+elif OptionType == "Down and Out Call Option":
+    B_down_idx = np.argmin(np.abs(S - B_down))
+    V[:, :B_down_idx+1] = 0
+    V[:, -1] = S_max - K*np.exp(-r*(T-t))
+    V[-1, B_down_idx+1:] = np.maximum(S[B_down_idx+1:] - K, 0)
+    i_min = B_down_idx + 1
+    i_max = S_nodes - 1
+
+elif OptionType == "Down and Out Put Option":
+    B_down_idx = np.argmin(np.abs(S - B_down))
+    V[:, :B_down_idx+1] = 0
+    V[:, -1] = 0
+    V[-1, B_down_idx+1:] = np.maximum(K - S[B_down_idx+1:], 0)
+    i_min = B_down_idx + 1
+    i_max = S_nodes - 1
+            
+
+
+
+for j in range(T_nodes-1, 0, -1):
+    for i in range(i_min, i_max):
+        V[j-1,i] = V[j,i] + dt*(((V[j, i+1] - 2*V[j,i]+V[j,i-1])/(ds**2))*0.5 * ((vol*S[i])**2) + r*S[i]*((V[j,i+1]-V[j,i-1])/(2*ds)) - r*V[j,i] )
+
+
+def BlackScholesPrices(S_array, K, r, vol, T, t):
+    CallPrices = np.zeros(S_array.size)
+    PutPrices = np.zeros(S_array.size)
+    DigitalCallPrices = np.zeros(S_array.size)
+    DigitalPutPrices = np.zeros(S_array.size)
+    DigitalPutPrices[0] = np.exp(-r*(T-t))
+    PutPrices[0] = K*np.exp(-r*(T-t))
+    for i in range(1,S_array.size):
+        d1 = (np.log(S_array[i]/K) + (r+(0.5*(vol**2)))*(T-t)) / (vol*np.sqrt(T-t))
+        d2 = d1 - vol*np.sqrt(T-t)
+        CallPrices[i] = S_array[i]*norm.cdf(d1) - (K*np.exp(-r*(T-t))*norm.cdf(d2))
+        PutPrices[i] = -S_array[i]*norm.cdf(-d1) +(K*np.exp(-r*(T-t))*norm.cdf(-d2))
+        DigitalCallPrices[i] = np.exp(-r*(T-t)) * norm.cdf(d2)
+        DigitalPutPrices[i] = np.exp(-r*(T-t)) * norm.cdf(-d2)
+    return CallPrices, PutPrices, DigitalCallPrices, DigitalPutPrices
+BS_CallPrices, BS_PutPrices, DigitalCallPrices, DigitalPutPrices = BlackScholesPrices(S, K, r, vol, T, 0)
+
+def BarrierClosedForm(S, K, B, r, vol, T, t, OptionType, BarrierType):
+
+    S = np.asarray(S, dtype=float)
+    tau = T - t
+    prices = np.zeros_like(S)
+
+    if BarrierType == "Up":
+        active = S < B
+    else:
+        active = S > B
+
+    if tau == 0:
+        payoff = (np.maximum(S-K, 0) if OptionType == "Call"
+                  else np.maximum(K-S, 0))
+        return np.where(active, payoff, 0)
+
+
+    if BarrierType == "Up" and OptionType == "Put":
+        prices[S == 0] = K * np.exp(-r*tau)
+
+    valid = active & (S > 0)
+    s = S[valid]
+
+    if s.size == 0:
+        return prices
+
+    sigma2 = vol**2
+    v = sigma2 * tau
+    m = r - sigma2 / 2
+
+    b = np.log(B / s)
+    k = np.log(K / s)
+
+    # Integration limits for payoff and surviving paths
+    if OptionType == "Call":
+        lower = k if BarrierType == "Up" else np.maximum(k, b)
+        upper = b if BarrierType == "Up" else np.full_like(b, np.inf)
+    else:
+        lower = np.full_like(b, -np.inf) if BarrierType == "Up" else b
+        upper = np.minimum(k, b) if BarrierType == "Up" else k
+
+
+    def moment(a, p):
+        z_upper = (upper - a - p*v) / np.sqrt(v)
+        z_lower = (lower - a - p*v) / np.sqrt(v)
+
+        return np.where(
+            upper > lower,
+            np.exp(p*a + 0.5*p*p*v) *
+            (norm.cdf(z_upper) - norm.cdf(z_lower)),
+            0
+        )
+
+
+    a = m * tau
+    a_reflected = 2*b + a
+    weight = np.exp(2*m*b / sigma2)
+
+    M0 = moment(a, 0) - weight*moment(a_reflected, 0)
+    M1 = moment(a, 1) - weight*moment(a_reflected, 1)
+
+    if OptionType == "Call":
+        prices[valid] = np.exp(-r*tau) * (s*M1 - K*M0)
+    else:
+        prices[valid] = np.exp(-r*tau) * (K*M0 - s*M1)
+
+    return np.maximum(prices, 0)
+
+if OptionType == "Put":
+    ClosedForm_Prices = BS_PutPrices
+elif OptionType =="Call":
+    ClosedForm_Prices = BS_CallPrices
+elif OptionType == "Digital Call":
+    ClosedForm_Prices = DigitalCallPrices
+elif OptionType == "Digital Put":
+    ClosedForm_Prices = DigitalPutPrices
+
+elif OptionType == "Up and Out Call Option":
+    ClosedForm_Prices = BarrierClosedForm(
+        S, K, B_up, r, vol, T, 0, "Call", "Up"
+    )
+
+elif OptionType == "Up and Out Put Option":
+    ClosedForm_Prices = BarrierClosedForm(
+        S, K, B_up, r, vol, T, 0, "Put", "Up"
+    )
+
+elif OptionType == "Down and Out Call Option":
+    ClosedForm_Prices = BarrierClosedForm(
+        S, K, B_down, r, vol, T, 0, "Call", "Down"
+    )
+
+elif OptionType == "Down and Out Put Option":
+    ClosedForm_Prices = BarrierClosedForm(
+        S, K, B_down, r, vol, T, 0, "Put", "Down"
+    )
+
+
+
+plt.figure()
+plt.plot(S, V[0, :], label=f"Finite Difference {OptionType}")
+plt.plot(S, ClosedForm_Prices, linestyle="--",
+         label=f"Analytical Black-Scholes {OptionType}")
+
+plt.xlabel("Stock Price ($)")
+plt.ylabel(f"European {OptionType} Option Price ($)")
+plt.title(f"European {OptionType}: Finite Difference vs Black-Scholes")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+# Create 2D coordinate grids
+S_grid, t_grid = np.meshgrid(S, t)
+
+# Plot finite-difference surface
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection="3d")
+
+surface = ax.plot_surface(
+    S_grid,
+    t_grid,
+    V,
+    cmap="viridis",
+    edgecolor="none",
+    alpha=0.95
+)
+
+
+
+BS_Surface = np.zeros_like(V)
+
+for j in range(t.size):
+
+    if j == t.size - 1:
+
+        if OptionType == "Call":
+            BS_Surface[j, :] = np.maximum(S-K, 0)
+
+        elif OptionType == "Put":
+            BS_Surface[j, :] = np.maximum(K-S, 0)
+
+        elif OptionType == "Digital Call":
+            BS_Surface[j, :] = np.where(S >= K, 1, 0)
+
+        elif OptionType == "Digital Put":
+            BS_Surface[j, :] = np.where(S < K, 1, 0)
+
+        elif OptionType == "Up and Out Call Option":
+            BS_Surface[j, :] = np.where(S < B_up, np.maximum(S-K, 0), 0)
+
+        elif OptionType == "Up and Out Put Option":
+            BS_Surface[j, :] = np.where(S < B_up, np.maximum(K-S, 0), 0)
+
+        elif OptionType == "Down and Out Call Option":
+            BS_Surface[j, :] = np.where(S > B_down, np.maximum(S-K, 0), 0)
+
+        elif OptionType == "Down and Out Put Option":
+            BS_Surface[j, :] = np.where(S > B_down, np.maximum(K-S, 0), 0)
+
+    else:
+
+        CallPrices, PutPrices, DigitalCallPrices, DigitalPutPrices = BlackScholesPrices(
+            S, K, r, vol, T, t[j]
+        )
+
+        if OptionType == "Call":
+            BS_Surface[j, :] = CallPrices
+
+        elif OptionType == "Put":
+            BS_Surface[j, :] = PutPrices
+
+        elif OptionType == "Digital Call":
+            BS_Surface[j, :] = DigitalCallPrices
+
+        elif OptionType == "Digital Put":
+            BS_Surface[j, :] = DigitalPutPrices
+
+        elif OptionType == "Up and Out Call Option":
+            BS_Surface[j, :] = BarrierClosedForm(
+                S, K, B_up, r, vol, T, t[j], "Call", "Up"
+            )
+
+        elif OptionType == "Up and Out Put Option":
+            BS_Surface[j, :] = BarrierClosedForm(
+                S, K, B_up, r, vol, T, t[j], "Put", "Up"
+            )
+
+        elif OptionType == "Down and Out Call Option":
+            BS_Surface[j, :] = BarrierClosedForm(
+                S, K, B_down, r, vol, T, t[j], "Call", "Down"
+            )
+
+        elif OptionType == "Down and Out Put Option":
+            BS_Surface[j, :] = BarrierClosedForm(
+                S, K, B_down, r, vol, T, t[j], "Put", "Down"
+            )
+
+#2D Finite Difference vs Analytical Solution Analysis
+
+ClosedForm_Prices = BS_Surface[0, :]
+
+plt.figure(figsize=(10, 6))
+
+plt.plot(S, V[0, :], label=f"Finite Difference {OptionType}")
+plt.plot(S, ClosedForm_Prices, linestyle="--",
+         label=f"Analytical {OptionType}")
+
+plt.xlabel("Stock Price ($)")
+plt.ylabel(f"{OptionType} Price ($)")
+plt.title(f"{OptionType}: Finite Difference vs Analytical")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+
+# 3D Finite Difference vs Analytical Solution Analysis
+
+S_grid, t_grid = np.meshgrid(S, t)
+
+fig = plt.figure(figsize=(16, 7))
+
+ax1 = fig.add_subplot(121, projection="3d")
+ax2 = fig.add_subplot(122, projection="3d")
+
+ax1.plot_surface(
+    S_grid, t_grid, V,
+    cmap="viridis",
+    edgecolor="none"
+)
+
+ax2.plot_surface(
+    S_grid, t_grid, BS_Surface,
+    cmap="plasma",
+    edgecolor="none"
+)
+
+for ax in [ax1, ax2]:
+    ax.set_xlabel("Stock Price ($)")
+    ax.set_ylabel("Time (years)")
+    ax.set_zlabel(f"{OptionType} Price ($)")
+    ax.view_init(elev=25, azim=-125)
+
+ax1.set_title(f"Finite Difference — {OptionType}")
+ax2.set_title(f"Analytical — {OptionType}")
+
+plt.tight_layout()
+plt.show()
+
+
+#3D Surface Error Analysis for Option Prices V(S,T)
+
+Error_Surface = np.abs(V - BS_Surface)
+
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection="3d")
+
+ax.plot_surface(
+    S_grid, t_grid, Error_Surface,
+    cmap="inferno",
+    edgecolor="none"
+)
+
+ax.set_xlabel("Stock Price ($)")
+ax.set_ylabel("Time (years)")
+ax.set_zlabel("Absolute Pricing Error ($)")
+ax.set_title(f"{OptionType} — PDE Absolute Error")
+
+plt.tight_layout()
+plt.show()
+
+
+#Finite Difference Error Analysis
+
+FD_Error = V[0, :] - ClosedForm_Prices
+
+FD_MAE = np.mean(np.abs(FD_Error))
+FD_RMSE = np.sqrt(np.mean(FD_Error**2))
+FD_Max_Error = np.max(np.abs(FD_Error))
+
+print(f"\n===== {OptionType.upper()} PDE ERROR ANALYSIS =====")
+print(f"Mean Absolute Error (MAE):       ${FD_MAE:.6f}")
+print(f"Root Mean Squared Error (RMSE):  ${FD_RMSE:.6f}")
+print(f"Maximum Absolute Error:         ${FD_Max_Error:.6f}")
+
+
+#Vanilla Put-Call Parity
+
+BS_Parity_Left = BS_CallPrices + K*np.exp(-r*T)
+BS_Parity_Right = BS_PutPrices + S
+
+BS_Parity_Error = BS_Parity_Left - BS_Parity_Right
+
+print("\n===== VANILLA PUT-CALL PARITY =====")
+print("C + K*exp(-rT) = P + S")
+
+print(f"Mean Absolute Parity Error: ${np.mean(np.abs(BS_Parity_Error)):.8f}")
+print(f"Maximum Absolute Parity Error: ${np.max(np.abs(BS_Parity_Error)):.8f}")
+
+
+#Option Price at the initial Stock Price
+
+S_0 = 100
+
+FD_Price = np.interp(S_0, S, V[0, :])
+Analytical_Price = np.interp(S_0, S, ClosedForm_Prices)
+
+print(f"\n===== {OptionType.upper()} PRICE AT S0 = ${S_0} =====")
+print(f"Finite Difference Price: ${FD_Price:.6f}")
+print(f"Analytical Price:        ${Analytical_Price:.6f}")
+print(f"Absolute Error:          ${abs(FD_Price - Analytical_Price):.6f}")
