@@ -1,6 +1,6 @@
 # Derivative Pricing using Finite Difference and Monte Carlo Simulation
 
-**[View Model in Browser](https://sundarramdatla.github.io/Derivative-Pricing-Model/)**
+**[View Model in Browser](https://sundarramdatla.github.io/Derivative-Pricing-Dashboard/)**
 
 ## 1. Introduction
 
